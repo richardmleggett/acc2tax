@@ -1,0 +1,19 @@
+gi2tax
+Richard.Leggett@tgac.ac.uk
+
+Given a file of Genbank IDs (one per line), this program will return a taxonomy string for each. Loading the database takes a minute or two, but querying it is then very quick. This suits situations where you have many hundreds of thousands or millions of GIs which you wish to query taxonomy for and using the NCBI web interface would be too slow.
+
+To compile, type:
+cc -o gi2tax gi2tax.c
+
+For details of running, type:
+gi2tax -h
+
+Database files can be downloaded from:
+ftp://ftp.ncbi.nih.gov/pub/taxonomy
+
+The files required are:
+nodes.dmp
+names.dmp
+gi_taxid_nucl.dmp
+gi_taxid_prot.dmp

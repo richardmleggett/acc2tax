@@ -43,11 +43,11 @@ void usage(void)
            "\nProvide batch taxonomy information for Genbank iDs.\n" \
            "\nOptions:\n" \
            "    [-h | --help] This help screen.\n" \
-           "    [-i | --input] File of Genbank IDs, one per line." \
-           "    [-o | --output] Filename of output file." \
-           "    [-d | --database] Directory containing NCBI taxonomy files." \
-           "    [-n | --nucleotide] Query GIs are nucleotide [default]." \
-           "    [-p | --protein] Query GIs are protein." \
+           "    [-i | --input] File of Genbank IDs, one per line.\n" \
+           "    [-o | --output] Filename of output file.\n" \
+           "    [-d | --database] Directory containing NCBI taxonomy files.\n" \
+           "    [-n | --nucleotide] Query GIs are nucleotide [default].\n" \
+           "    [-p | --protein] Query GIs are protein.\n" \
            "\n");
 }
 

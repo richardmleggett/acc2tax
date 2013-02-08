@@ -442,4 +442,6 @@ int main(int argc, char* argv[])
     printf("Memory required: %d MB\n\n", memory_required / (1024 * 1024));
     
     process_request_file();
+
+    return 0;
 }

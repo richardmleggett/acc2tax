@@ -13,9 +13,10 @@
 /*----------------------------------------------------------------------*
  * Constants
  *----------------------------------------------------------------------*/
-#define MAX_GI 500000000
+#define MAX_GI 1000000000
 #define MAX_NAMES 2000000
 #define MAX_PATH 10000
+#define VERSION "v0.2"
 
 /*----------------------------------------------------------------------*
  * Globals
@@ -29,6 +30,7 @@ long int memory_required = 0;
 unsigned int* gi_to_node;
 char** names;
 unsigned int* nodes;
+unsigned int max_gi = MAX_GI;
 
 /*----------------------------------------------------------------------*
  * Function:   usage
@@ -38,15 +40,15 @@ unsigned int* nodes;
  *----------------------------------------------------------------------*/
 void usage(void)
 {
-    printf("\ngi2tax v0.1\n" \
-           "richard.leggett@tgac.ac.uk\n" \
+    printf("Bugs/comments: richard.leggett@tgac.ac.uk\n" \
            "\nProvide batch taxonomy information for Genbank iDs.\n" \
            "\nOptions:\n" \
            "    [-h | --help] This help screen.\n" \
-           "    [-i | --input] File of Genbank IDs, one per line.\n" \
-           "    [-o | --output] Filename of output file.\n" \
            "    [-d | --database] Directory containing NCBI taxonomy files.\n" \
+           "    [-e | --entries] Max GI entries (default 1000000000).\n"
+           "    [-i | --input] File of Genbank IDs, one per line.\n" \
            "    [-n | --nucleotide] Query GIs are nucleotide [default].\n" \
+           "    [-o | --output] Filename of output file.\n" \
            "    [-p | --protein] Query GIs are protein.\n" \
            "\n");
 }
@@ -62,6 +64,7 @@ void parse_command_line(int argc, char* argv[])
 {
     static struct option long_options[] = {
         {"database", required_argument, NULL, 'd'},
+        {"entries", required_argument, NULL, 'e'},
         {"help", no_argument, NULL, 'h'},
         {"input", required_argument, NULL, 'i'},
         {"nucleotide", no_argument, NULL, 'n'},
@@ -76,7 +79,7 @@ void parse_command_line(int argc, char* argv[])
     output_filename[0] = 0;
     database_dir[0] = 0;
     
-    while ((opt = getopt_long(argc, argv, "d:hi:no:p", long_options, &longopt_index)) > 0)
+    while ((opt = getopt_long(argc, argv, "d:e:hi:no:p", long_options, &longopt_index)) > 0)
     {
         switch(opt) {
             case 'h':
@@ -103,6 +106,13 @@ void parse_command_line(int argc, char* argv[])
                     exit(1);
                 }
                 strcpy(database_dir, optarg);
+                break;
+            case 'e':
+                if (optarg==NULL) {
+                    printf("Error: Option requires an argument.\n");
+                    exit(1);
+                }
+                max_gi=atoi(optarg);
                 break;
             case 'n':
                 is_nucleotide = 1;
@@ -137,9 +147,9 @@ void parse_command_line(int argc, char* argv[])
  *----------------------------------------------------------------------*/
 void allocate_memory(void)
 {
-    printf("Allocating memory for GI list\n");
-    memory_required+=(MAX_GI * sizeof(unsigned int));
-    gi_to_node = calloc(MAX_GI, sizeof(int));
+    printf("Allocating memory for GI list (%d entries)\n", max_gi);
+    memory_required+=(max_gi * sizeof(unsigned int));
+    gi_to_node = calloc(max_gi, sizeof(unsigned int));
     if (!gi_to_node) {
         printf("Error: couldn't allocate memory.\n");
         exit(1);
@@ -196,14 +206,15 @@ void load_gi_to_node_list()
                 unsigned int gi = atoi(gi_str);
                 unsigned int node_id = atoi(node_id_str);
                 
-                if ((gi < 0) || (gi >= MAX_GI)) {
+                if (gi >= max_gi) {
                     printf("Error: GI out of range - %d\n", gi);
+                    exit(1);
                 } else {
-                    if (node_id < 0) {
-                        printf("Error: Node ID out of range - %d\n", node_id);
-                    } else {
+                    //if (node_id < 0) {
+                    //    printf("Error: Node ID out of range - %d\n", node_id);
+                    //} else {
                         gi_to_node[gi] = node_id;
-                    }
+                    //}
                 }
             
             }
@@ -349,7 +360,7 @@ char* get_taxonomy_by_gi(int gi, char* taxonomy)
     
     taxonomy[0] = 0;
     
-    if ((gi >= MAX_GI) || (gi < 1)) {
+    if ((gi >= max_gi) || (gi < 1)) {
         printf("Error: bad GI (%d)\n", gi);
         e = 1;
     }
@@ -414,7 +425,7 @@ void process_request_file()
             count++;
             
             if (gi < 1) {
-                printf("Error: bad GI (%s) in request file\n", gi);
+                printf("Error: bad GI (%d) in request file\n", gi);
             } else {
                 get_taxonomy_by_gi(gi, t);
                 fprintf(fp_out, "%i\t%s\n", gi, t);
@@ -433,13 +444,15 @@ void process_request_file()
  *----------------------------------------------------------------------*/
 int main(int argc, char* argv[])
 {
+    printf("\ngi2tax %s\n\n", VERSION);
+
     parse_command_line(argc, argv);
     allocate_memory();
     load_gi_to_node_list();
     load_node_list();
     load_name_list();
 
-    printf("Memory required: %d MB\n\n", memory_required / (1024 * 1024));
+    printf("Memory required: %ld MB\n\n", memory_required / (1024 * 1024));
     
     process_request_file();
 

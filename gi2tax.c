@@ -1,8 +1,9 @@
 /*----------------------------------------------------------------------*
- * File:    gi2tax.c
+ * File:    acc2tax.c
  * Author:  Richard Leggett (richard.leggett@tgac.ac.uk)
- * Purpose: Convert GI number to taxonomy
+ * Purpose: Convert GI or accession to taxonomy
  * Created: 10 Jan 2013
+ * Update:  10 Jun 2016
  *----------------------------------------------------------------------*/
 
 #include <stdio.h>
@@ -13,10 +14,10 @@
 /*----------------------------------------------------------------------*
  * Constants
  *----------------------------------------------------------------------*/
-#define MAX_GI 1000000000
+#define MAX_GI 1050000000
 #define MAX_NAMES 2000000
 #define MAX_PATH 10000
-#define VERSION "v0.2"
+#define VERSION "v0.4"
 
 /*----------------------------------------------------------------------*
  * Globals
@@ -26,11 +27,15 @@ char input_filename[MAX_PATH];
 char output_filename[MAX_PATH];
 int is_nucleotide = 1;
 int is_protein = 0;
+int is_accession = 1;
+int is_gi = 0;
 long int memory_required = 0;
 unsigned int* gi_to_node;
 char** names;
 unsigned int* nodes;
 unsigned int max_gi = MAX_GI;
+FILE* acc_fp;
+long int acc_file_size;
 
 /*----------------------------------------------------------------------*
  * Function:   usage
@@ -41,15 +46,17 @@ unsigned int max_gi = MAX_GI;
 void usage(void)
 {
     printf("Bugs/comments: richard.leggett@tgac.ac.uk\n" \
-           "\nProvide batch taxonomy information for Genbank iDs.\n" \
+           "\nProvide batch taxonomy information for Genbank IDs or Accessions.\n" \
            "\nOptions:\n" \
-           "    [-h | --help] This help screen.\n" \
-           "    [-d | --database] Directory containing NCBI taxonomy files.\n" \
-           "    [-e | --entries] Max GI entries (default 1000000000).\n"
-           "    [-i | --input] File of Genbank IDs, one per line.\n" \
-           "    [-n | --nucleotide] Query GIs are nucleotide [default].\n" \
-           "    [-o | --output] Filename of output file.\n" \
-           "    [-p | --protein] Query GIs are protein.\n" \
+           "    [-h | --help]       This help screen.\n" \
+           "    [-a | --accession]  Query is accession IDs [default].\n" \
+           "    [-d | --database]   Directory containing NCBI taxonomy files.\n" \
+           "    [-e | --entries]    Max GI entries (default 1050000000).\n" \
+           "    [-g | --gi]         Query is Genbank IDs.\n" \
+           "    [-i | --input]      File of IDs (GI or Accession), one per line.\n" \
+           "    [-n | --nucleotide] Query IDs are nucleotide [default].\n" \
+           "    [-o | --output]     Filename of output file.\n" \
+           "    [-p | --protein]    Query IDs are protein.\n" \
            "\n");
 }
 
@@ -63,8 +70,10 @@ void usage(void)
 void parse_command_line(int argc, char* argv[])
 {
     static struct option long_options[] = {
+        {"accession", no_argument, NULL, 'a'),
         {"database", required_argument, NULL, 'd'},
         {"entries", required_argument, NULL, 'e'},
+        {"gi", no_argument, NULL, 'g'),
         {"help", no_argument, NULL, 'h'},
         {"input", required_argument, NULL, 'i'},
         {"nucleotide", no_argument, NULL, 'n'},
@@ -79,12 +88,20 @@ void parse_command_line(int argc, char* argv[])
     output_filename[0] = 0;
     database_dir[0] = 0;
     
-    while ((opt = getopt_long(argc, argv, "d:e:hi:no:p", long_options, &longopt_index)) > 0)
+    while ((opt = getopt_long(argc, argv, "ad:e:ghi:no:p", long_options, &longopt_index)) > 0)
     {
         switch(opt) {
             case 'h':
                 usage();
                 exit(0);
+                break;
+            case 'a'
+                is_accession = 1;
+                is_gi = 0;
+                break;
+            case 'g'
+                is_accession = 0;
+                is_gi = 1;
                 break;
             case 'i':
                 if (optarg==NULL) {
@@ -140,6 +157,21 @@ void parse_command_line(int argc, char* argv[])
 }
 
 /*----------------------------------------------------------------------*
+ * Function:   chomp
+ * Purpose:    Remove hidden characters from end of line
+ * Parameters: str -> String to change
+ * Returns:    None
+ *----------------------------------------------------------------------*/
+void chomp(char* str)
+{
+    int i = strlen(str) - 1;
+    
+    while ((i > 0) && (str[i] < ' ')) {
+        str[i--] = 0;
+    }
+}
+
+/*----------------------------------------------------------------------*
  * Function:   allocate_memory
  * Purpose:    Allocate memory to store tabkes
  * Parameters: None
@@ -147,29 +179,33 @@ void parse_command_line(int argc, char* argv[])
  *----------------------------------------------------------------------*/
 void allocate_memory(void)
 {
-    printf("Allocating memory for GI list (%d entries)\n", max_gi);
-    memory_required+=(max_gi * sizeof(unsigned int));
-    gi_to_node = calloc(max_gi, sizeof(unsigned int));
-    if (!gi_to_node) {
-        printf("Error: couldn't allocate memory.\n");
-        exit(1);
+    if (is_gi) {
+        memory_required+=(max_gi * sizeof(unsigned int));
+        printf("Allocating memory for GI list (%d entries)\n", max_gi);
+        gi_to_node = calloc(max_gi, sizeof(unsigned int));
+        if (!gi_to_node) {
+            printf("Error: couldn't allocate memory.\n");
+            exit(1);
+        }
     }
     
-    printf("Allocating memory for names list\n");
     memory_required+=(MAX_NAMES * sizeof(char*));
+    printf("Allocating memory for names list (%d entries)\n", MAX_NAMES);
     names = calloc(MAX_NAMES, sizeof(char*));
     if (!names) {
         printf("Error: couldn't allocate memory.\n");
         exit(1);
     }
 
-    printf("Allocating memory for nodes list\n");
     memory_required+=(MAX_NAMES * sizeof(int*));
+    printf("Allocating memory for nodes list (%d entries)\n", MAX_NAMES);
     nodes = calloc(MAX_NAMES, sizeof(int*));
     if (!nodes) {
         printf("Error: couldn't allocate memory.\n");
         exit(1);
     }
+
+    printf("Total memory required %ld Mb\n", memory_required / (1024*1025));
 }
 
 /*----------------------------------------------------------------------*
@@ -210,11 +246,7 @@ void load_gi_to_node_list()
                     printf("Error: GI out of range - %d\n", gi);
                     exit(1);
                 } else {
-                    //if (node_id < 0) {
-                    //    printf("Error: Node ID out of range - %d\n", node_id);
-                    //} else {
-                        gi_to_node[gi] = node_id;
-                    //}
+                    gi_to_node[gi] = node_id;
                 }
             
             }
@@ -420,15 +452,26 @@ void process_request_file()
     
     while (!feof(fp_in)) {        
         if (fgets(line, 1024, fp_in)) {
-            int gi = atoi(line);
+            chomp(line);
             
-            count++;
-            
-            if (gi < 1) {
-                printf("Error: bad GI (%d) in request file\n", gi);
-            } else {
-                get_taxonomy_by_gi(gi, t);
-                fprintf(fp_out, "%i\t%s\n", gi, t);
+            if (is_gi) {
+                int gi = atoi(line);
+                
+                count++;
+                
+                if (gi < 1) {
+                    printf("Error: bad GI (%d) in request file\n", gi);
+                } else {
+                    get_taxonomy_by_gi(gi, t);
+                    fprintf(fp_out, "%i\t%s\n", gi, t);
+                }
+            } else if (is_accession) {
+                found = find_accession(str, buffer, &accession, &version, &taxid, &gi);
+                if (found == 1) {
+                    printf("Found %s: %s, %s, %d, %d\n", str, accession, version, taxid, gi);
+                } else {
+                    printf("Couldn't find: [%s]\n", str);
+                }
             }
         }
     }
@@ -440,6 +483,156 @@ void process_request_file()
 }
 
 /*----------------------------------------------------------------------*
+ * Function:
+ * Purpose:
+ * Parameters:
+ * Returns:
+ *----------------------------------------------------------------------*/
+void open_acc_file(char* filename) {
+    acc_fp = fopen(filename, "r");
+    if (!acc_fp) {
+        printf("Error: can't open %s\n", filename);
+        exit(1);
+    }
+    fseek(acc_fp, 0, SEEK_END);
+    acc_file_size = ftell(acc_fp);
+    printf("File size: %li\n", acc_file_size);
+}
+
+/*----------------------------------------------------------------------*
+ * Function:
+ * Purpose:
+ * Parameters:
+ * Returns:
+ *----------------------------------------------------------------------*/
+void close_acc_file() {
+    if (acc_fp) {
+        fclose(acc_fp);
+    }
+}
+
+char* get_first_token(char* string, char* value, char token) {
+    int i;
+    
+    for (i=0; i<strlen(string); i++) {
+        if (string[i] == token) {
+            break;
+        } else {
+            value[i] = string[i];
+        }
+    }
+    
+    return value;
+}
+
+/*----------------------------------------------------------------------*
+ * Function:
+ * Purpose:
+ * Parameters:
+ * Returns:
+ *----------------------------------------------------------------------*/
+void get_closest_record(long int pos, char* line) {
+    char c;
+    char temp[1024];
+    char token[1024];
+    char* this_acc;
+    char* prev_acc;
+    char* next_acc;
+    
+    while (pos >= 0) {
+        fseek(acc_fp, pos, SEEK_SET);
+        pos--;
+        
+        c = fgetc(acc_fp);
+        if (c == '\n') {
+            break;
+        }
+    }
+    
+    fgets(line, 1024, acc_fp);
+    
+#ifdef DEBUG
+    printf("Got line: %s\n", line);
+#endif
+}
+
+/*----------------------------------------------------------------------*
+ * Function:
+ * Purpose:
+ * Parameters:
+ * Returns:
+ *----------------------------------------------------------------------*/
+void split_fields(char* line, char** accession, char** version, long int* taxid, long int* gi) {
+    char* taxid_str;
+    char* gi_str;
+    
+    *accession = strtok(line, "\t");
+    *version = strtok(NULL, "\t");
+    taxid_str = strtok(NULL, "\t");
+    gi_str = strtok(NULL, "\t");
+    
+    if (taxid_str != NULL) {
+        *taxid = atoi(taxid_str);
+    } else {
+        *taxid = 0;
+    }
+    
+    if (gi_str != NULL) {
+        *gi = atoi(gi_str);
+    } else {
+        *gi = 0;
+    }
+    
+#ifdef DEBUG
+    printf("Accession: %s\n", *accession);
+    printf("Version: %s\n", *version);
+    printf("Tax ID: %ld\n", *taxid);
+    printf("GI: %ld\n", *gi);
+#endif
+}
+
+/*----------------------------------------------------------------------*
+ * Function:
+ * Purpose:
+ * Parameters:
+ * Returns:
+ *----------------------------------------------------------------------*/
+int find_accession(char* search_accession, char* line, char** accession, char** version, long int* taxid, long int* gi) {
+    long int min = 0;
+    long int max = acc_file_size;
+    int similarity;
+    int found = 0;
+    
+#ifdef DEBUG
+    printf("Finding %s\n", search_accession);
+#endif
+    
+    while (found == 0) {
+        long int current_pos = min + ((max-min) / 2);
+#ifdef DEBUG
+        printf("Min: %d Max: %d\n", min, max);
+#endif
+        get_closest_record(current_pos, line);
+        split_fields(line, accession, version, taxid, gi);
+        
+        similarity = strcmp(*accession, search_accession);
+        if (similarity == 0) {
+            found = 1;
+        } else if (similarity > 0) {
+            max = current_pos;
+        } else if (similarity < 0) {
+            min = current_pos;
+        }
+        
+        if (abs(max - min) < 20) {
+            break;
+        }
+    }
+    
+    return found;
+}
+
+/*----------------------------------------------------------------------*
  * Function:   main
  *----------------------------------------------------------------------*/
 int main(int argc, char* argv[])
@@ -448,7 +641,11 @@ int main(int argc, char* argv[])
 
     parse_command_line(argc, argv);
     allocate_memory();
-    load_gi_to_node_list();
+    if (is_gi) {
+        load_gi_to_node_list();
+    } else if (is_accession) {
+        open_acc_file("nucl_all.txt");
+    }
     load_node_list();
     load_name_list();
 
@@ -456,5 +653,9 @@ int main(int argc, char* argv[])
     
     process_request_file();
 
+    if (is_accession) {
+        close_acc_file();
+    }
+    
     return 0;
 }

@@ -1,13 +1,9 @@
-gi2tax
+acc2tax
 Richard.Leggett@tgac.ac.uk
 
-Given a file of Genbank IDs (one per line), this program will return a taxonomy string for each. Loading the database takes a minute or two, but querying it is then very quick. This suits situations where you have many hundreds of thousands or millions of GIs which you wish to query taxonomy for and using the NCBI web interface would be too slow.
+Given a file of accessions or Genbank IDs (one per line), this program will return a taxonomy string for each.
 
-To compile, type:
-cc -o gi2tax gi2tax.c
-
-For details of running, type:
-gi2tax -h
+Lookup for Genbank IDs is quicker than for accessions, as the lookup table is stored in RAM (though this does mean it takes a couple of minutes to load). For accessions, the lookup is from disc.
 
 Database files can be downloaded from:
 ftp://ftp.ncbi.nih.gov/pub/taxonomy
@@ -17,3 +13,16 @@ nodes.dmp
 names.dmp
 gi_taxid_nucl.dmp
 gi_taxid_prot.dmp
+
+For accessions, you will need a merged sorted copy of some of the files from the accession2taxid directory. You need to:
+cat nucl_est.accession2taxid nucl_gb.accession2taxid nucl_gss.accession2taxid nucl_wgs.accession2taxid dead_nucl.accession2taxid dead_wgs.accession2taxid | sort > nucl_all.txt
+cat prot.accession2taxid dead_prot.accession2taxid | sort > prot_all.txt
+and place thsese files in the same directory as the above database files.
+
+To compile, type:
+cc -o acctax acc2tax.c
+
+For details of running, type:
+acc2tax -h
+
+

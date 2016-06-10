@@ -70,10 +70,10 @@ void usage(void)
 void parse_command_line(int argc, char* argv[])
 {
     static struct option long_options[] = {
-        {"accession", no_argument, NULL, 'a'),
+        {"accession", no_argument, NULL, 'a'},
         {"database", required_argument, NULL, 'd'},
         {"entries", required_argument, NULL, 'e'},
-        {"gi", no_argument, NULL, 'g'),
+        {"gi", no_argument, NULL, 'g'},
         {"help", no_argument, NULL, 'h'},
         {"input", required_argument, NULL, 'i'},
         {"nucleotide", no_argument, NULL, 'n'},
@@ -95,11 +95,11 @@ void parse_command_line(int argc, char* argv[])
                 usage();
                 exit(0);
                 break;
-            case 'a'
+            case 'a':
                 is_accession = 1;
                 is_gi = 0;
                 break;
-            case 'g'
+            case 'g':
                 is_accession = 0;
                 is_gi = 1;
                 break;
@@ -382,31 +382,15 @@ void load_name_list(void)
  * Parameters: None
  * Returns:    None
  *----------------------------------------------------------------------*/
-char* get_taxonomy_by_gi(int gi, char* taxonomy)
+char* get_taxonomy_from_node(int current_node, char* taxonomy)
 {
-    int e = 0;
     int node_list[1024];
-    int current_node;
     int n = 0;
     int i;
-    
+
     taxonomy[0] = 0;
-    
-    if ((gi >= max_gi) || (gi < 1)) {
-        printf("Error: bad GI (%d)\n", gi);
-        e = 1;
-    }
-    
-    if (e == 0) {
-        current_node = gi_to_node[gi];
-        
-        if (current_node == 0) {
-            printf("Error: GI (%d) node (%d) invalid\n", gi, current_node);
-            e = 2;
-        }
-    }
-    
-    while ((current_node > 1) && (e == 0)) {
+
+    while (current_node > 1) {
         node_list[n++] = current_node;
         current_node = nodes[current_node];
     }
@@ -416,8 +400,42 @@ char* get_taxonomy_by_gi(int gi, char* taxonomy)
             strcat(taxonomy, names[node_list[i]]);
             if (i > 0) strcat(taxonomy, ",");
         } else {
-            printf("Error: no name for node %d\n", node_list[i]);
+            strcat(taxonomy, "Unknown");
+            if (i > 0) strcat(taxonomy, ",");
+            printf("\nError: no name for node %d\n", node_list[i]);
         }
+    }
+    
+    return taxonomy;
+}
+
+/*----------------------------------------------------------------------*
+ * Function:   get_taxonomy_by_gi
+ * Purpose:    Given a GI, return taxonomy string
+ * Parameters: None
+ * Returns:    None
+ *----------------------------------------------------------------------*/
+char* get_taxonomy_by_gi(int gi, char* taxonomy)
+{
+    int e = 0;
+    int current_node;
+    
+    if ((gi >= max_gi) || (gi < 1)) {
+        printf("\nError: bad GI (%d)\n", gi);
+        e = 1;
+    }
+    
+    if (e == 0) {
+        current_node = gi_to_node[gi];
+        
+        if (current_node == 0) {
+            printf("\nError: GI (%d) node (%d) invalid\n", gi, current_node);
+            e = 2;
+        }
+    }
+    
+    if (e == 0) {
+        taxonomy = get_taxonomy_from_node(current_node, taxonomy);
     }
     
     return taxonomy;
@@ -433,9 +451,15 @@ void process_request_file()
 {
     FILE *fp_in;
     FILE *fp_out;
+    char buffer[1024];
+    char *accession;
+    char *version;
     char line[1024];
     char t[1024];
     int count = 0;
+    long int taxid;
+    long int gi;
+    int found;
 
     fp_in = fopen(input_filename, "r");
     if (!fp_in) {
@@ -453,11 +477,14 @@ void process_request_file()
     while (!feof(fp_in)) {        
         if (fgets(line, 1024, fp_in)) {
             chomp(line);
-            
+            count++;
+            if ((count % 100) == 0) {
+                printf(".");
+                fflush(stdout);
+            }
+
             if (is_gi) {
                 int gi = atoi(line);
-                
-                count++;
                 
                 if (gi < 1) {
                     printf("Error: bad GI (%d) in request file\n", gi);
@@ -466,11 +493,19 @@ void process_request_file()
                     fprintf(fp_out, "%i\t%s\n", gi, t);
                 }
             } else if (is_accession) {
-                found = find_accession(str, buffer, &accession, &version, &taxid, &gi);
+                char* query = line;
+                
+                found = find_accession(query, buffer, &accession, &version, &taxid, &gi);
                 if (found == 1) {
-                    printf("Found %s: %s, %s, %d, %d\n", str, accession, version, taxid, gi);
+                    if (taxid == 0) {
+                        strcpy(t, "Unknown");
+                    } else {
+                        get_taxonomy_from_node(taxid, t);
+                    }
+                    //printf("Found %s: %s, %s, %d, %d\n", query, accession, version, taxid, gi);
+                    fprintf(fp_out, "%s\t%s\n", query, t);
                 } else {
-                    printf("Couldn't find: [%s]\n", str);
+                    printf("\nCouldn't find: [%s]\n", query);
                 }
             }
         }
@@ -479,7 +514,7 @@ void process_request_file()
     fclose(fp_out);
     fclose(fp_in);
     
-    printf("Processed %d IDs.\n", count);
+    printf("\n\nDone. Processed %d IDs.\n", count);
 }
 
 /*----------------------------------------------------------------------*
@@ -633,18 +668,41 @@ int find_accession(char* search_accession, char* line, char** accession, char** 
 }
 
 /*----------------------------------------------------------------------*
+ * Function:
+ * Purpose:
+ * Parameters:
+ * Returns:
+ *----------------------------------------------------------------------*/
+void load_accession_file(void)
+{
+    char filename[MAX_PATH];
+    
+    if (is_nucleotide) {
+        sprintf(filename, "%s/acc2tax_nucl_all.txt", database_dir);
+    } else {
+        sprintf(filename, "%s/acc2tax_prot_all.txt", database_dir);
+    }
+    
+    printf("Opening database file %s\n", filename);
+    
+    open_acc_file(filename);
+}
+
+/*----------------------------------------------------------------------*
  * Function:   main
  *----------------------------------------------------------------------*/
 int main(int argc, char* argv[])
 {
-    printf("\ngi2tax %s\n\n", VERSION);
+    //setbuf(stdout, NULL);
+    
+    printf("\nacc2tax %s\n\n", VERSION);
 
     parse_command_line(argc, argv);
     allocate_memory();
     if (is_gi) {
         load_gi_to_node_list();
     } else if (is_accession) {
-        open_acc_file("nucl_all.txt");
+        load_accession_file();
     }
     load_node_list();
     load_name_list();

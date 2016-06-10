@@ -20,7 +20,7 @@ cat prot.accession2taxid dead_prot.accession2taxid | sort > prot_all.txt
 and place thsese files in the same directory as the above database files.
 
 To compile, type:
-cc -o acctax acc2tax.c
+cc -o acc2tax acc2tax.c
 
 For details of running, type:
 acc2tax -h

@@ -15,9 +15,10 @@
  * Constants
  *----------------------------------------------------------------------*/
 #define MAX_GI 1050000000
-#define MAX_NAMES 2000000
+#define MAX_NAMES 3000000
 #define MAX_PATH 10000
-#define VERSION "v0.4"
+#define MAX_LINE_LENGTH 10000
+#define VERSION "v0.6"
 
 /*----------------------------------------------------------------------*
  * Globals
@@ -29,9 +30,13 @@ int is_nucleotide = 1;
 int is_protein = 0;
 int is_accession = 1;
 int is_gi = 0;
+int strip_version = 0;
+int id_column = 1;
 long int memory_required = 0;
+int keep_columns = 0;
 unsigned int* gi_to_node;
 char** names;
+char delim='\t';
 unsigned int* nodes;
 unsigned int max_gi = MAX_GI;
 FILE* acc_fp;
@@ -50,13 +55,16 @@ void usage(void)
            "\nOptions:\n" \
            "    [-h | --help]       This help screen.\n" \
            "    [-a | --accession]  Query is accession IDs [default].\n" \
+           "    [-c | --column]     1-based column number of ID in input file (default 1)." \
            "    [-d | --database]   Directory containing NCBI taxonomy files.\n" \
            "    [-e | --entries]    Max GI entries (default 1050000000).\n" \
            "    [-g | --gi]         Query is Genbank IDs.\n" \
            "    [-i | --input]      File of IDs (GI or Accession), one per line.\n" \
+           "    [-k | --keep]       Copy columns from input to output file, then append taxonomy as new column.\n" \
            "    [-n | --nucleotide] Query IDs are nucleotide [default].\n" \
            "    [-o | --output]     Filename of output file.\n" \
            "    [-p | --protein]    Query IDs are protein.\n" \
+           "    [-s | --strip]      Strip version from input acession IDs (ie. everything after .)" \
            "\n");
 }
 
@@ -71,14 +79,17 @@ void parse_command_line(int argc, char* argv[])
 {
     static struct option long_options[] = {
         {"accession", no_argument, NULL, 'a'},
+        {"column", no_argument, NULL, 'c'},
         {"database", required_argument, NULL, 'd'},
         {"entries", required_argument, NULL, 'e'},
         {"gi", no_argument, NULL, 'g'},
         {"help", no_argument, NULL, 'h'},
         {"input", required_argument, NULL, 'i'},
+        {"keep", no_argument, NULL, 'k'},
         {"nucleotide", no_argument, NULL, 'n'},
         {"output", required_argument, NULL, 'o'},
         {"protein", no_argument, NULL, 'p'},
+        {"strip", no_argument, NULL, 's'},
         {0, 0, 0, 0}
     };
     int opt;
@@ -88,7 +99,7 @@ void parse_command_line(int argc, char* argv[])
     output_filename[0] = 0;
     database_dir[0] = 0;
     
-    while ((opt = getopt_long(argc, argv, "ad:e:ghi:no:p", long_options, &longopt_index)) > 0)
+    while ((opt = getopt_long(argc, argv, "ac:d:e:ghi:kno:ps", long_options, &longopt_index)) > 0)
     {
         switch(opt) {
             case 'h':
@@ -98,6 +109,9 @@ void parse_command_line(int argc, char* argv[])
             case 'a':
                 is_accession = 1;
                 is_gi = 0;
+                break;
+            case 'c':
+                id_column = atoi(optarg);
                 break;
             case 'g':
                 is_accession = 0;
@@ -109,6 +123,9 @@ void parse_command_line(int argc, char* argv[])
                     exit(1);
                 }
                 strcpy(input_filename, optarg);
+                break;
+            case 'k':
+                keep_columns = 1;
                 break;
             case 'o':
                 if (optarg==NULL) {
@@ -138,6 +155,9 @@ void parse_command_line(int argc, char* argv[])
             case 'p':
                 is_nucleotide = 0;
                 is_protein = 1;
+                break;
+            case 's':
+                strip_version = 1;
                 break;
         }
     }
@@ -360,6 +380,11 @@ void load_name_list(void)
             get_name_fields(line, id_str, name, unique_name, class);
             
             unsigned int id = atoi(id_str);
+            
+            if (id > MAX_NAMES) {
+                printf("Error: id (%d) is greater than maximum currently allowed (%d)\n", id, MAX_NAMES);
+                exit(1);
+            }
 
             if (strcmp(class, "scientific name") == 0) {
                 memory_required += (strlen(name)+1);
@@ -442,6 +467,43 @@ char* get_taxonomy_by_gi(int gi, char* taxonomy)
 }
 
 /*----------------------------------------------------------------------*
+ * Function:   get_id_from_line
+ * Purpose:    Find ID from correct column of line
+ * Parameters: line -> line string
+*              id -> string to put ID into
+ * Returns:    None
+ *----------------------------------------------------------------------*/
+void get_id_from_line(char* line, char* id) {
+    char line_copy[MAX_LINE_LENGTH];
+    char* token;
+    int c = 1;
+    
+    id[0] = 0;
+    strcpy(line_copy, line);
+    
+    if (strtok(line_copy, delim) == 0) {
+        if (id_column == 1) {
+            strcpy(id, line);
+        }
+    } else {
+        if (c == id_column) {
+            strcpy(id, token);
+        }
+        c++;
+        
+        while (c <= id_column) {
+            token = strtok(0, delim);
+            if (token == 0) {
+                break;
+            } else if (c == id_column) {
+                strcpy(id, token);
+            }
+            c++;
+        }
+    }
+}
+
+/*----------------------------------------------------------------------*
  * Function:   process_request_file
  * Purpose:    Find taxonomy for a file of GIs
  * Parameters: filename -> name of file containing one GI per line
@@ -454,7 +516,8 @@ void process_request_file()
     char buffer[1024];
     char *accession;
     char *version;
-    char line[1024];
+    char line[MAX_LINE_LENGTH];
+    char id[128];
     char t[1024];
     int count = 0;
     long int taxid;
@@ -475,37 +538,57 @@ void process_request_file()
     }    
     
     while (!feof(fp_in)) {        
-        if (fgets(line, 1024, fp_in)) {
+        if (fgets(line, MAX_LINE_LENGTH, fp_in)) {
             chomp(line);
             count++;
             if ((count % 100) == 0) {
                 printf(".");
                 fflush(stdout);
             }
-
-            if (is_gi) {
-                int gi = atoi(line);
+            
+            get_id_from_line(line, id);
+            if (id[0] == 0) {
+                printf("Couldn't get ID!");
+            } else {
+                printf("ID: %s\n");
                 
-                if (gi < 1) {
-                    printf("Error: bad GI (%d) in request file\n", gi);
-                } else {
-                    get_taxonomy_by_gi(gi, t);
-                    fprintf(fp_out, "%i\t%s\n", gi, t);
-                }
-            } else if (is_accession) {
-                char* query = line;
-                
-                found = find_accession(query, buffer, &accession, &version, &taxid, &gi);
-                if (found == 1) {
-                    if (taxid == 0) {
-                        strcpy(t, "Unknown");
+                if (is_gi) {
+                    int gi = atoi(id);
+                    
+                    if (gi < 1) {
+                        printf("Error: bad GI (%d) in request file\n", gi);
                     } else {
-                        get_taxonomy_from_node(taxid, t);
+                        get_taxonomy_by_gi(gi, t);
+                        fprintf(fp_out, "%i\t%s\n", gi, t);
                     }
-                    //printf("Found %s: %s, %s, %d, %d\n", query, accession, version, taxid, gi);
-                    fprintf(fp_out, "%s\t%s\n", query, t);
-                } else {
-                    printf("\nCouldn't find: [%s]\n", query);
+                } else if (is_accession) {
+                    // Strip version
+                    if (strip_version) {
+                        int i;
+                        for (i=strlen(id)-1; i>0; i--) {
+                            if (id[i] == '.') {
+                                id[i] = 0;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    found = find_accession(id, buffer, &accession, &version, &taxid, &gi);
+                    if (found == 1) {
+                        if (taxid == 0) {
+                            strcpy(t, "Unknown");
+                        } else {
+                            get_taxonomy_from_node(taxid, t);
+                        }
+                        //printf("Found %s: %s, %s, %d, %d\n", id, accession, version, taxid, gi);
+                        if (keep_columns) {
+                            fprintf(fp_out, "%s%c%s\n", line, delim, t);
+                        } else {
+                            fprintf(fp_out, "%s%c%s\n", id, delim, t);
+                        }
+                    } else {
+                        printf("\nCouldn't find: [%s]\n", id);
+                    }
                 }
             }
         }

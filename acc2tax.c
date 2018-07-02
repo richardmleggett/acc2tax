@@ -55,7 +55,7 @@ void usage(void)
            "\nOptions:\n" \
            "    [-h | --help]       This help screen.\n" \
            "    [-a | --accession]  Query is accession IDs [default].\n" \
-           "    [-c | --column]     1-based column number of ID in input file (default 1)." \
+           "    [-c | --column]     1-based column number of ID in input file (default 1).\n" \
            "    [-d | --database]   Directory containing NCBI taxonomy files.\n" \
            "    [-e | --entries]    Max GI entries (default 1050000000).\n" \
            "    [-g | --gi]         Query is Genbank IDs.\n" \

@@ -657,7 +657,7 @@ void process_request_file()
             if (id[0] == 0) {
                 printf("Couldn't get ID!");
             } else {
-                printf("ID: %s\n", id);
+                //printf("ID: %s\n", id);
                 
                 if (is_gi) {
                     int gi = atoi(id);

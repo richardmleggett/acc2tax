@@ -487,7 +487,7 @@ void get_id_from_line(char* line, char* id) {
         }
     } else {
         if (c == id_column) {
-            strcpy(id, token);
+            strcpy(id, line);
         }
         c++;
         

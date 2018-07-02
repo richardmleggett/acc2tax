@@ -36,7 +36,7 @@ long int memory_required = 0;
 int keep_columns = 0;
 unsigned int* gi_to_node;
 char** names;
-char delim='\t';
+const char* delim="\t";
 unsigned int* nodes;
 unsigned int max_gi = MAX_GI;
 FILE* acc_fp;
@@ -504,146 +504,6 @@ void get_id_from_line(char* line, char* id) {
 }
 
 /*----------------------------------------------------------------------*
- * Function:   process_request_file
- * Purpose:    Find taxonomy for a file of GIs
- * Parameters: filename -> name of file containing one GI per line
- * Returns:    None
- *----------------------------------------------------------------------*/
-void process_request_file()
-{
-    FILE *fp_in;
-    FILE *fp_out;
-    char buffer[1024];
-    char *accession;
-    char *version;
-    char line[MAX_LINE_LENGTH];
-    char id[128];
-    char t[1024];
-    int count = 0;
-    long int taxid;
-    long int gi;
-    int found;
-
-    fp_in = fopen(input_filename, "r");
-    if (!fp_in) {
-        printf("Error: can't open %s\n", input_filename);
-        exit(1);
-    }
-
-    fp_out = fopen(output_filename, "w");
-    if (!fp_out) {
-        fclose(fp_in);
-        printf("Error: can't open %s\n", output_filename);
-        exit(1);
-    }    
-    
-    while (!feof(fp_in)) {        
-        if (fgets(line, MAX_LINE_LENGTH, fp_in)) {
-            chomp(line);
-            count++;
-            if ((count % 100) == 0) {
-                printf(".");
-                fflush(stdout);
-            }
-            
-            get_id_from_line(line, id);
-            if (id[0] == 0) {
-                printf("Couldn't get ID!");
-            } else {
-                printf("ID: %s\n");
-                
-                if (is_gi) {
-                    int gi = atoi(id);
-                    
-                    if (gi < 1) {
-                        printf("Error: bad GI (%d) in request file\n", gi);
-                    } else {
-                        get_taxonomy_by_gi(gi, t);
-                        fprintf(fp_out, "%i\t%s\n", gi, t);
-                    }
-                } else if (is_accession) {
-                    // Strip version
-                    if (strip_version) {
-                        int i;
-                        for (i=strlen(id)-1; i>0; i--) {
-                            if (id[i] == '.') {
-                                id[i] = 0;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    found = find_accession(id, buffer, &accession, &version, &taxid, &gi);
-                    if (found == 1) {
-                        if (taxid == 0) {
-                            strcpy(t, "Unknown");
-                        } else {
-                            get_taxonomy_from_node(taxid, t);
-                        }
-                        //printf("Found %s: %s, %s, %d, %d\n", id, accession, version, taxid, gi);
-                        if (keep_columns) {
-                            fprintf(fp_out, "%s%c%s\n", line, delim, t);
-                        } else {
-                            fprintf(fp_out, "%s%c%s\n", id, delim, t);
-                        }
-                    } else {
-                        printf("\nCouldn't find: [%s]\n", id);
-                    }
-                }
-            }
-        }
-    }
-    
-    fclose(fp_out);
-    fclose(fp_in);
-    
-    printf("\n\nDone. Processed %d IDs.\n", count);
-}
-
-/*----------------------------------------------------------------------*
- * Function:
- * Purpose:
- * Parameters:
- * Returns:
- *----------------------------------------------------------------------*/
-void open_acc_file(char* filename) {
-    acc_fp = fopen(filename, "r");
-    if (!acc_fp) {
-        printf("Error: can't open %s\n", filename);
-        exit(1);
-    }
-    fseek(acc_fp, 0, SEEK_END);
-    acc_file_size = ftell(acc_fp);
-    printf("File size: %li\n", acc_file_size);
-}
-
-/*----------------------------------------------------------------------*
- * Function:
- * Purpose:
- * Parameters:
- * Returns:
- *----------------------------------------------------------------------*/
-void close_acc_file() {
-    if (acc_fp) {
-        fclose(acc_fp);
-    }
-}
-
-char* get_first_token(char* string, char* value, char token) {
-    int i;
-    
-    for (i=0; i<strlen(string); i++) {
-        if (string[i] == token) {
-            break;
-        } else {
-            value[i] = string[i];
-        }
-    }
-    
-    return value;
-}
-
-/*----------------------------------------------------------------------*
  * Function:
  * Purpose:
  * Parameters:
@@ -742,12 +602,152 @@ int find_accession(char* search_accession, char* line, char** accession, char** 
             min = current_pos;
         }
         
-        if (abs(max - min) < 20) {
+        if (labs(max - min) < 20) {
             break;
         }
     }
     
     return found;
+}
+
+/*----------------------------------------------------------------------*
+ * Function:   process_request_file
+ * Purpose:    Find taxonomy for a file of GIs
+ * Parameters: filename -> name of file containing one GI per line
+ * Returns:    None
+ *----------------------------------------------------------------------*/
+void process_request_file()
+{
+    FILE *fp_in;
+    FILE *fp_out;
+    char buffer[1024];
+    char *accession;
+    char *version;
+    char line[MAX_LINE_LENGTH];
+    char id[128];
+    char t[1024];
+    int count = 0;
+    long int taxid;
+    long int gi;
+    int found;
+
+    fp_in = fopen(input_filename, "r");
+    if (!fp_in) {
+        printf("Error: can't open %s\n", input_filename);
+        exit(1);
+    }
+
+    fp_out = fopen(output_filename, "w");
+    if (!fp_out) {
+        fclose(fp_in);
+        printf("Error: can't open %s\n", output_filename);
+        exit(1);
+    }    
+    
+    while (!feof(fp_in)) {        
+        if (fgets(line, MAX_LINE_LENGTH, fp_in)) {
+            chomp(line);
+            count++;
+            if ((count % 100) == 0) {
+                printf(".");
+                fflush(stdout);
+            }
+            
+            get_id_from_line(line, id);
+            if (id[0] == 0) {
+                printf("Couldn't get ID!");
+            } else {
+                printf("ID: %s\n", id);
+                
+                if (is_gi) {
+                    int gi = atoi(id);
+                    
+                    if (gi < 1) {
+                        printf("Error: bad GI (%d) in request file\n", gi);
+                    } else {
+                        get_taxonomy_by_gi(gi, t);
+                        fprintf(fp_out, "%i\t%s\n", gi, t);
+                    }
+                } else if (is_accession) {
+                    // Strip version
+                    if (strip_version) {
+                        int i;
+                        for (i=strlen(id)-1; i>0; i--) {
+                            if (id[i] == '.') {
+                                id[i] = 0;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    found = find_accession(id, buffer, &accession, &version, &taxid, &gi);
+                    if (found == 1) {
+                        if (taxid == 0) {
+                            strcpy(t, "Unknown");
+                        } else {
+                            get_taxonomy_from_node(taxid, t);
+                        }
+                        //printf("Found %s: %s, %s, %d, %d\n", id, accession, version, taxid, gi);
+                        if (keep_columns) {
+                            fprintf(fp_out, "%s%s%s\n", line, delim, t);
+                        } else {
+                            fprintf(fp_out, "%s%s%s\n", id, delim, t);
+                        }
+                    } else {
+                        printf("\nCouldn't find: [%s]\n", id);
+                    }
+                }
+            }
+        }
+    }
+    
+    fclose(fp_out);
+    fclose(fp_in);
+    
+    printf("\n\nDone. Processed %d IDs.\n", count);
+}
+
+/*----------------------------------------------------------------------*
+ * Function:
+ * Purpose:
+ * Parameters:
+ * Returns:
+ *----------------------------------------------------------------------*/
+void open_acc_file(char* filename) {
+    acc_fp = fopen(filename, "r");
+    if (!acc_fp) {
+        printf("Error: can't open %s\n", filename);
+        exit(1);
+    }
+    fseek(acc_fp, 0, SEEK_END);
+    acc_file_size = ftell(acc_fp);
+    printf("File size: %li\n", acc_file_size);
+}
+
+/*----------------------------------------------------------------------*
+ * Function:
+ * Purpose:
+ * Parameters:
+ * Returns:
+ *----------------------------------------------------------------------*/
+void close_acc_file() {
+    if (acc_fp) {
+        fclose(acc_fp);
+    }
+}
+
+char* get_first_token(char* string, char* value, char token) {
+    int i;
+    
+    for (i=0; i<strlen(string); i++) {
+        if (string[i] == token) {
+            break;
+        } else {
+            value[i] = string[i];
+        }
+    }
+    
+    return value;
 }
 
 /*----------------------------------------------------------------------*

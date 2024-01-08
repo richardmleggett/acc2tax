@@ -15,7 +15,7 @@
  * Constants
  *----------------------------------------------------------------------*/
 #define MAX_GI 1050000000
-#define MAX_NAMES 3000000
+#define MAX_NAMES 5000000
 #define MAX_PATH 10000
 #define MAX_LINE_LENGTH 10000
 #define VERSION "v0.6"
